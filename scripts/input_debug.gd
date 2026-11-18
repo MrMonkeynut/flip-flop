@@ -8,12 +8,7 @@ extends CanvasLayer
 
 const LOG_LINES := 18
 const AXIS_LOG_THRESHOLD := 0.5
-const ACTIONS := [
-	"lh_left", "lh_right", "lh_fwd", "lh_back",
-	"rh_left", "rh_right", "rh_fwd", "rh_back",
-	"left_grab", "right_grab", "left_foot", "right_foot",
-	"cam_left", "cam_right", "respawn", "toggle_help",
-]
+const GAME_INPUTS := ["L-stick", "R-stick", "L1 grab", "R1 grab", "L2 foot", "R2 foot"]
 const BUTTON_NAMES := [
 	"A/Cross", "B/Circle", "X/Square", "Y/Triangle", "Back", "Guide", "Start",
 	"L3", "R3", "L1", "R1", "DpadUp", "DpadDown", "DpadLeft", "DpadRight", "Misc",
@@ -27,7 +22,7 @@ var _panel: PanelContainer
 var _label: Label
 var _log: Array[String] = []
 var _axis_active := {} # "device:axis" -> bool
-var _action_state := {} # action -> bool
+var _game_state := {} # game input name -> bool
 
 
 func _ready() -> void:
@@ -53,8 +48,8 @@ func _ready() -> void:
 	_label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75))
 	_panel.add_child(_label)
 
-	for a in ACTIONS:
-		_action_state[a] = false
+	for g in GAME_INPUTS:
+		_game_state[g] = false
 	_add_log("Input debug on (F3 to hide)")
 	for dev in Input.get_connected_joypads():
 		_log_pad_info(dev, "found")
@@ -94,12 +89,26 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
-	# Log game actions turning on/off - this is what the game actually reacts to.
-	for a in ACTIONS:
-		var on := Input.is_action_pressed(a)
-		if on != bool(_action_state[a]):
-			_action_state[a] = on
-			_add_log(">> action %-11s %s" % [a, "ON" if on else "off"])
+	if main == null or main.pad == null:
+		return
+	var pad = main.pad
+	var l: Vector2 = pad.left_stick()
+	var r: Vector2 = pad.right_stick()
+
+	# Log what the GAME reacts to turning on/off (from the one controller in use).
+	var now := {
+		"L-stick": l.length() > 0.5, "R-stick": r.length() > 0.5,
+		"L1 grab": pad.left_bumper(), "R1 grab": pad.right_bumper(),
+		"L2 foot": pad.left_trigger(), "R2 foot": pad.right_trigger(),
+	}
+	for g in GAME_INPUTS:
+		if bool(now[g]) != bool(_game_state[g]):
+			_game_state[g] = now[g]
+			_add_log(">> GAME %-7s %s" % [g, "ON" if now[g] else "off"])
+	if pad.notes.size() > 0:
+		for n in pad.notes:
+			_add_log(n)
+		pad.notes.clear()
 
 	if not _panel.visible:
 		return
@@ -108,7 +117,8 @@ func _process(_delta: float) -> void:
 	if pads.is_empty():
 		lines.append("NO CONTROLLER CONNECTED")
 	for dev in pads:
-		lines.append("pad%d \"%s\" %s" % [dev, Input.get_joy_name(dev), "known" if Input.is_joy_known(dev) else "UNKNOWN LAYOUT"])
+		lines.append("%s pad%d \"%s\" %s" % ["IN USE >" if dev == pad.device else "ignored ", dev,
+			Input.get_joy_name(dev), "known" if Input.is_joy_known(dev) else "UNKNOWN LAYOUT"])
 		var axes := ""
 		for ax in 6:
 			axes += "%s%+.2f " % [_axis_name(ax), Input.get_joy_axis(dev, ax)]
@@ -126,13 +136,13 @@ func _process(_delta: float) -> void:
 				held.append(BUTTON_NAMES[b])
 		lines.append("  held: " + (", ".join(held) if not held.is_empty() else "-"))
 
-	var l := Input.get_vector("lh_left", "lh_right", "lh_back", "lh_fwd")
-	var r := Input.get_vector("rh_left", "rh_right", "rh_back", "rh_fwd")
+	if pads.size() > 1:
+		lines.append("(only the IN USE pad counts - press a button to switch)")
 	lines.append("GAME  Lstick(%+.2f,%+.2f) Rstick(%+.2f,%+.2f)" % [l.x, l.y, r.x, r.y])
 	lines.append("      L1:%s R1:%s L2:%s(%.2f) R2:%s(%.2f)" % [
-		_on(Input.is_action_pressed("left_grab")), _on(Input.is_action_pressed("right_grab")),
-		_on(Input.is_action_pressed("left_foot")), Input.get_action_strength("left_foot"),
-		_on(Input.is_action_pressed("right_foot")), Input.get_action_strength("right_foot")])
+		_on(pad.left_bumper()), _on(pad.right_bumper()),
+		_on(pad.left_trigger()), pad.trigger_value(JOY_AXIS_TRIGGER_LEFT),
+		_on(pad.right_trigger()), pad.trigger_value(JOY_AXIS_TRIGGER_RIGHT)])
 
 	var me = null
 	if main != null and main.world != null:

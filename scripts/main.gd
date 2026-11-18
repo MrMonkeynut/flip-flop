@@ -9,10 +9,10 @@ extends Node3D
 ## This keeps everyone's wobbly physics in agreement, which matters a lot when two
 ## people are carrying the same crate.
 
-const InputSetup := preload("res://scripts/input_setup.gd")
 const WorldScript := preload("res://scripts/world.gd")
 const PlayerScript := preload("res://scripts/player.gd")
 const InputDebugScript := preload("res://scripts/input_debug.gd")
+const PadInputScript := preload("res://scripts/pad_input.gd")
 
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
@@ -42,6 +42,9 @@ var _hud_label: Label
 var _help_panel: PanelContainer
 var _solo_button: Button
 
+## The one controller the local player uses (see pad_input.gd).
+var pad: PadInputScript
+
 # Automated self-test (run with: godot --headless -- --autotest)
 var _autotest := false
 var _autotest_time := 0.0
@@ -50,7 +53,6 @@ var _autotest_next_print := 0.0
 
 
 func _ready() -> void:
-	InputSetup.setup()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -63,6 +65,10 @@ func _ready() -> void:
 	camera.position = Vector3(0, 5, 8)
 	camera.look_at(Vector3.ZERO)
 	camera.current = true
+
+	pad = PadInputScript.new()
+	pad.name = "PadInput"
+	add_child(pad)
 
 	_build_ui()
 
@@ -297,18 +303,18 @@ func _read_local_input() -> PackedFloat32Array:
 	out.resize(INPUT_SIZE)
 	if _menu.visible:
 		return out
-	var l := Input.get_vector("lh_left", "lh_right", "lh_back", "lh_fwd")
-	var r := Input.get_vector("rh_left", "rh_right", "rh_back", "rh_fwd")
+	var l := pad.left_stick()
+	var r := pad.right_stick()
 	out[0] = l.x
 	out[1] = l.y
 	out[2] = r.x
 	out[3] = r.y
-	out[4] = 1.0 if Input.is_action_pressed("left_grab") else 0.0
-	out[5] = 1.0 if Input.is_action_pressed("right_grab") else 0.0
-	out[6] = 1.0 if Input.is_action_pressed("left_foot") else 0.0
-	out[7] = 1.0 if Input.is_action_pressed("right_foot") else 0.0
+	out[4] = 1.0 if pad.left_bumper() else 0.0
+	out[5] = 1.0 if pad.right_bumper() else 0.0
+	out[6] = 1.0 if pad.left_trigger() else 0.0
+	out[7] = 1.0 if pad.right_trigger() else 0.0
 	out[8] = cam_yaw
-	out[9] = 1.0 if Input.is_action_pressed("respawn") else 0.0
+	out[9] = 1.0 if pad.button(JOY_BUTTON_BACK) or Input.is_physical_key_pressed(KEY_R) else 0.0
 	return out
 
 
@@ -343,11 +349,11 @@ func _zero_input() -> PackedFloat32Array:
 func _process(delta: float) -> void:
 	if world == null:
 		return
-	if Input.is_action_just_pressed("cam_left"):
+	if pad.just_pressed(JOY_BUTTON_DPAD_LEFT, KEY_Z):
 		cam_yaw_target -= PI / 4.0
-	if Input.is_action_just_pressed("cam_right"):
+	if pad.just_pressed(JOY_BUTTON_DPAD_RIGHT, KEY_X):
 		cam_yaw_target += PI / 4.0
-	if Input.is_action_just_pressed("toggle_help"):
+	if pad.just_pressed(JOY_BUTTON_START, KEY_H):
 		_help_panel.visible = not _help_panel.visible
 	cam_yaw = lerp_angle(cam_yaw, cam_yaw_target, 1.0 - exp(-8.0 * delta))
 

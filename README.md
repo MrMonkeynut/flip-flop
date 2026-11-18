@@ -104,7 +104,8 @@ scenes/main.tscn       Root scene (just the Main node)
 scripts/main.gd        Menu, networking (ENet), camera, HUD
 scripts/player.gd      The wobbly character: physics, grabbing, visuals, snapshots
 scripts/world.gd       The test room and its props, built in code
-scripts/input_setup.gd Controller mapping
+scripts/pad_input.gd   Controller reading (one pad only, PS4 layout fix)
+scripts/input_debug.gd F3 input debugger
 ```
 
 ## The test room
