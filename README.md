@@ -21,6 +21,7 @@ a bar, and drop things into the basket.
 | Back / Select | Respawn |
 | Start | Show / hide the controls help |
 | Esc (keyboard) | Leave to the main menu |
+| F3 (keyboard) | Toggle the input debugger (top right): controller name, raw axes and a live log of every input |
 
 **To walk:** hold L2 and push the left stick all the way forward. The left foot swings out
 and, once it's stretched far enough, drags your body along after it. Let go of L2 to plant it.

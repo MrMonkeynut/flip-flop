@@ -12,6 +12,7 @@ extends Node3D
 const InputSetup := preload("res://scripts/input_setup.gd")
 const WorldScript := preload("res://scripts/world.gd")
 const PlayerScript := preload("res://scripts/player.gd")
+const InputDebugScript := preload("res://scripts/input_debug.gd")
 
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
@@ -64,6 +65,11 @@ func _ready() -> void:
 	camera.current = true
 
 	_build_ui()
+
+	# On-screen input debugger (F3 to toggle).
+	var dbg := InputDebugScript.new()
+	dbg.main = self
+	add_child(dbg)
 
 	var args := OS.get_cmdline_user_args()
 	if args.has("--autotest"):
