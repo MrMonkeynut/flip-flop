@@ -22,8 +22,12 @@ a bar, and drop things into the basket.
 | Start | Show / hide the controls help |
 | Esc (keyboard) | Leave to the main menu |
 
-**To walk:** hold L2, push the left stick forward, let go of L2. Then hold R2, push the right
-stick forward, let go of R2. Repeat. Your body shuffles over to sit between your feet.
+**To walk:** hold L2 and push the left stick all the way forward. The left foot swings out
+and, once it's stretched far enough, drags your body along after it. Let go of L2 to plant it.
+Then hold R2 and do the same with the right foot. Flip, flop, flip, flop.
+
+Only one foot can move at a time. The first trigger you press wins, and the other trigger does
+nothing until you let go *and* that foot has landed. You always have one foot on the ground.
 
 Sticks are camera-relative: "forward" means away from the camera.
 
@@ -77,11 +81,13 @@ held together by **springs, not joints**, which is where the wobble comes from:
 
 - **Hands** are pulled toward a target set by the stick. A soft "bone" constraint stops them
   from getting further than arm's length from the shoulder. Reaching also yanks the torso a bit.
-- **Feet** that touch the ground get *planted* and stay put. Lift one with L2/R2 and it follows
-  the stick. Put it down and it plants in the new spot.
-- **Torso**: the legs push it up to standing height above the planted feet and pull it sideways
-  to sit between them. With no feet planted (both lifted, or knocked off your feet) the support
-  disappears and you flop over.
+- **Feet** that touch the ground get *planted* and stay put. Lift one with L2/R2 and it moves
+  relative to the planted foot: stick centred = beside it, stick all the way = a full stride
+  away. Put it down and it plants in the new spot. Only one foot can be lifted at a time.
+- **Torso**: the legs hold it up at standing height. With one foot planted, the body stays over
+  that foot until the moving foot is stretched past `DRAG_START`. Then it gets dragged toward
+  it, up to halfway at full stride (`STRIDE`). With both feet down it settles between them. If
+  you get knocked off both feet, the support disappears and you flop over.
 - A weak "stay upright" twist, plus a bit of deliberate drunken sway, keeps it standing, barely.
 - **Grabbing** creates a pin joint between the hand and whatever it touches, released when you
   let go of the button.

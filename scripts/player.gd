@@ -39,8 +39,10 @@ const HIP := Vector3(0.15, -0.36, 0.0)
 const ARM_LEN := 0.85
 const LEG_LEN := 0.85
 const STAND_HEIGHT := 0.95 # torso centre above the centre of the planted feet
-const STEP_REACH := 0.6
-const STEP_LIFT := 0.14
+const STRIDE := 1.15 # how far the moving foot can get from the planted one
+const STANCE_WIDTH := 0.3 # sideways gap between the feet with the stick centred
+const STEP_LIFT := 0.25 # how high a lifted foot hovers (enough to clear a stair)
+const DRAG_START := 0.35 # foot further than this from the planted one starts dragging the body
 
 const TORSO_MASS := 10.0
 const HAND_MASS := 0.8
@@ -85,6 +87,7 @@ var _bodies: Array[RigidBody3D] = []
 var _own_rids: Array[RID] = []
 
 var facing := Vector3.FORWARD
+var active_foot := -1 # which foot is being moved (-1 = none). Only one at a time.
 var lifted: Array[bool] = [false, false]
 var planted: Array[bool] = [false, false]
 var plant_points: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
@@ -324,6 +327,7 @@ func _place_bodies(p: Vector3) -> void:
 		b.angular_velocity = Vector3.ZERO
 	facing = Vector3.FORWARD
 	planted = [false, false]
+	active_foot = -1
 
 
 func respawn() -> void:
@@ -343,7 +347,17 @@ func physics_step(inp: PackedFloat32Array, delta: float) -> void:
 	_t += delta
 	var sticks: Array[Vector2] = [Vector2(inp[0], inp[1]), Vector2(inp[2], inp[3])]
 	var grab_held: Array[bool] = [inp[4] > 0.5, inp[5] > 0.5]
-	lifted = [inp[6] > 0.5, inp[7] > 0.5]
+	# Only one foot can move at a time. The first trigger pressed wins, and a foot can
+	# only lift if the other one is planted on something to stand on.
+	var foot_held: Array[bool] = [inp[6] > 0.5, inp[7] > 0.5]
+	if active_foot != -1 and not foot_held[active_foot]:
+		active_foot = -1
+	if active_foot == -1:
+		for i in 2:
+			if foot_held[i] and planted[1 - i]:
+				active_foot = i
+				break
+	lifted = [active_foot == 0, active_foot == 1]
 	var cam_basis := Basis(Vector3.UP, inp[8])
 	var fwd := cam_basis * Vector3.FORWARD
 	var right := cam_basis * Vector3.RIGHT
@@ -403,12 +417,26 @@ func physics_step(inp: PackedFloat32Array, delta: float) -> void:
 	var up_now := torso.global_basis.y
 	if n_planted > 0:
 		support /= float(n_planted)
-		var target_h := support.y + STAND_HEIGHT - crouch * 0.42 + sin(_t * 2.3 + _seed) * 0.02
+		# Where the hips want to be. Both feet down: halfway between them. One foot down:
+		# over that foot, until the other foot is stretched out far enough to drag the
+		# body toward it. At full stretch the body is pulled halfway, so putting the foot
+		# down doesn't jolt anything.
+		var anchor := support
+		var base_y := support.y
+		var stretch := 0.0
+		if n_planted == 1:
+			var pivot_i := 0 if planted[0] else 1
+			var pivot := feet[pivot_i].global_position
+			var other := feet[1 - pivot_i].global_position
+			var spread := Vector2(other.x - pivot.x, other.z - pivot.z).length()
+			stretch = clampf((spread - DRAG_START) / (STRIDE - DRAG_START), 0.0, 1.0)
+			anchor = pivot.lerp(other, 0.5 * stretch)
+			base_y = pivot.y
+		var target_h := base_y + STAND_HEIGHT - crouch * 0.42 - stretch * 0.08 + sin(_t * 2.3 + _seed) * 0.02
 		var dy := target_h - tp.y
-		var flat := Vector3(support.x - tp.x, 0, support.z - tp.z)
+		var flat := Vector3(anchor.x - tp.x, 0, anchor.z - tp.z)
 		if dy > -0.4 and flat.length() < LEG_LEN + 0.35:
-			var share := 1.0 if n_planted == 2 else 0.85
-			var fy := (TORSO_MASS * G + SUPPORT_K * dy - SUPPORT_C * tv.y) * share
+			var fy := TORSO_MASS * G + SUPPORT_K * dy - SUPPORT_C * tv.y
 			fy = clampf(fy, 0.0, TORSO_MASS * G * 4.0)
 			var lean := facing * crouch * 0.12
 			var fh := (flat + lean) * BALANCE_K - Vector3(tv.x, 0, tv.z) * BALANCE_C
@@ -479,13 +507,16 @@ func physics_step(inp: PackedFloat32Array, delta: float) -> void:
 		var fp := foot.global_position
 		var f := Vector3.ZERO
 		if lifted[i]:
+			# The moving foot is placed relative to the planted one: stick centred = beside
+			# it, stick pushed all the way = a full stride away (which drags the body).
 			var s := sticks[i]
 			var mag := minf(s.length(), 1.0)
-			var ground_y := tp.y - STAND_HEIGHT
-			if n_planted > 0:
-				ground_y = support.y
-			var target := Vector3(hip.x, ground_y, hip.z) + (right * s.x + fwd * s.y) * STEP_REACH \
-				+ Vector3.UP * (STEP_LIFT + 0.18 * mag)
+			var pivot := feet[1 - i].global_position
+			var side := -1.0 if i == 0 else 1.0
+			var offset := t_right * side * STANCE_WIDTH + (right * s.x + fwd * s.y) * STRIDE
+			offset.y = 0.0
+			offset = offset.limit_length(STRIDE)
+			var target := pivot + offset + Vector3.UP * (STEP_LIFT + 0.08 * sin(PI * mag))
 			f = (target - fp) * FOOT_K - (foot.linear_velocity - tv * 0.5) * FOOT_C
 			f = f.limit_length(FOOT_MAX_FORCE) + Vector3.UP * FOOT_MASS * G
 			torso.apply_central_force(-f * 0.1)
@@ -494,11 +525,11 @@ func physics_step(inp: PackedFloat32Array, delta: float) -> void:
 			e.y = minf(e.y, 0.0)
 			f = e * PLANT_K - foot.linear_velocity * PLANT_C
 		else:
-			# Dangling or being dragged: drift back under the hip.
-			var e := Vector3(hip.x - fp.x, 0, hip.z - fp.z)
-			f = e * 40.0 - Vector3(foot.linear_velocity.x, 0, foot.linear_velocity.z) * 3.0
+			# Just let go of the trigger (or knocked loose): stamp down where it is.
+			f = Vector3.DOWN * 25.0 - Vector3(foot.linear_velocity.x, 0, foot.linear_velocity.z) * 3.0
 		foot.apply_central_force(f)
-		_bone(foot, hip, LEG_LEN, LEG_K, LEG_C, 1.0)
+		# A planted leg holds the body back rather than getting dragged itself.
+		_bone(foot, hip, LEG_LEN, LEG_K, LEG_C, 1.0, 0.25 if planted[i] else 1.0)
 
 
 func _shoulder(i: int) -> Vector3:
@@ -512,7 +543,7 @@ func _hip(i: int) -> Vector3:
 
 
 ## Soft max-length constraint between a limb end and its anchor on the torso.
-func _bone(limb: RigidBody3D, anchor: Vector3, length: float, k: float, c: float, torso_share: float) -> void:
+func _bone(limb: RigidBody3D, anchor: Vector3, length: float, k: float, c: float, torso_share: float, limb_share := 1.0) -> void:
 	var d := limb.global_position - anchor
 	var dl := d.length()
 	if dl <= length:
@@ -520,7 +551,7 @@ func _bone(limb: RigidBody3D, anchor: Vector3, length: float, k: float, c: float
 	var dir := d / dl
 	var rel_v := (limb.linear_velocity - torso.linear_velocity).dot(dir)
 	var cf := dir * ((dl - length) * k + maxf(rel_v, 0.0) * c)
-	limb.apply_central_force(-cf)
+	limb.apply_central_force(-cf * limb_share)
 	torso.apply_force(cf * torso_share, anchor - torso.global_position)
 
 
